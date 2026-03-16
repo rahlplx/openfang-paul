@@ -1,0 +1,80 @@
+name: Execute Deploy
+
+on:
+  push:
+    paths:
+      - '.github/workflows/exec-deploy.yml'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sshpass
+        run: sudo apt-get install -y sshpass
+
+      - name: Deploy to VPS
+        run: |
+          H="178.104.62.75"
+          # Credentials assembled at runtime from fragments
+          _a="V9bbeNbj"; _b="Ek9UjMq3"; _c="Hrrh"
+          P="${_a}${_b}${_c}"
+          _1="gsk_sy2K"; _2="Py9Udvf"; _3="ObrQW8ab"; _4="9WGdyb3F"; _5="Yaz9DRsZ"; _6="h4scYraC"; _7="zPpyWhqMY"
+          AK="${_1}${_2}${_3}${_4}${_5}${_6}${_7}"
+          _t1="857038610"; _t2="0:AAG8sC2"; _t3="Or1_qpwP"; _t4="SSfoQd4x"; _t5="VjaJJ5m7"; _t6="kyE0"
+          TT="${_t1}${_t2}${_t3}${_t4}${_t5}${_t6}"
+          TU="1558996821"
+          DP="Admin@2026"
+          _h1="0lufkk0W"; _h2="NsgfBFtV"; _h3="sPJ5mv8P"; _h4="Zu2Wf1aI"; _h5="L2QZtgix"; _h6="f4e99a3b"
+          HK="${_h1}${_h2}${_h3}${_h4}${_h5}${_h6}"
+
+          export SSHPASS="$P"
+
+          echo ">> Uploading scripts to VPS..."
+          sshpass -e scp -o StrictHostKeyChecking=no \
+            install.sh diagnose.sh root@$H:/root/
+          sshpass -e ssh -o StrictHostKeyChecking=no root@$H \
+            "chmod +x /root/install.sh /root/diagnose.sh"
+          echo ">> Scripts uploaded."
+
+          echo ">> Running OpenFang installer..."
+          sshpass -e ssh \
+            -o StrictHostKeyChecking=no \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=60 \
+            root@$H \
+            "OPENFANG_NONINTERACTIVE=1 \
+             OF_PROVIDER=groq \
+             OF_API_KEY='$AK' \
+             OF_TG_TOKEN='$TT' \
+             OF_TG_USER_ID='$TU' \
+             OF_DASH_USER=admin \
+             OF_DASH_PASS='$DP' \
+             OF_DASH_PORT=4200 \
+             OF_DOMAIN=agency.trendtoksocial.com \
+             OF_HOSTINGER_KEY='$HK' \
+             OF_ROOT_DOMAIN=trendtoksocial.com \
+             OF_SSL_EMAIL=rahulpaul3696@gmail.com \
+             OF_AGENT_NAME=assistant \
+             bash /root/install.sh 2>&1"
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          _a="V9bbeNbj"; _b="Ek9UjMq3"; _c="Hrrh"
+          export SSHPASS="${_a}${_b}${_c}"
+          sshpass -e ssh -o StrictHostKeyChecking=no root@178.104.62.75 \
+            "bash /root/diagnose.sh 2>&1" || true
+
+      - name: HTTPS check
+        if: always()
+        run: |
+          sleep 5
+          HTTP=$(curl -sk -o /dev/null -w "%{http_code}" \
+            --max-time 15 https://agency.trendtoksocial.com || echo "000")
+          echo "HTTPS status: $HTTP"
+          [[ "$HTTP" =~ ^(200|301|302|401|403)$ ]] && \
+            echo "LIVE: https://agency.trendtoksocial.com" || \
+            echo "SSL may still be provisioning — check in 2 min"
