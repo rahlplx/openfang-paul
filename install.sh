@@ -81,19 +81,73 @@ require_email() {
 
 # ════════════════════════════════════════════════════════════
 #  SECTION 1 — COLLECT ALL CREDENTIALS UPFRONT
+#
+#  Two modes:
+#    Interactive (default): prompts user for each value
+#    Non-interactive:       set OPENFANG_NONINTERACTIVE=1 and
+#                           provide all OF_* env vars (used by CI/CD)
+#
+#  Required env vars for non-interactive mode:
+#    OF_PROVIDER        groq | openrouter | anthropic | openai
+#    OF_API_KEY         LLM provider API key
+#    OF_TG_TOKEN        Telegram bot token
+#    OF_TG_USER_ID      Telegram numeric user ID
+#    OF_DASH_USER       Dashboard username        (default: admin)
+#    OF_DASH_PASS       Dashboard password
+#    OF_DASH_PORT       Dashboard internal port   (default: 4200)
+#    OF_DOMAIN          Full subdomain (e.g. openfang.example.com)
+#    OF_HOSTINGER_KEY   Hostinger API key
+#    OF_ROOT_DOMAIN     Root domain (e.g. example.com)
+#    OF_SSL_EMAIL       Let's Encrypt email
+#    OF_AGENT_NAME      Agent name                (default: assistant)
 # ════════════════════════════════════════════════════════════
 section "STEP 1 -- Configuration"
 
+NONINTERACTIVE="${OPENFANG_NONINTERACTIVE:-0}"
+
+# ── Helper: prompt or use env var ────────────────────────────
+# Usage: prompt_or_env VARNAME "Prompt text" [default] [secret]
+prompt_or_env() {
+  local varname="$1" prompt="$2" default="${3:-}" secret="${4:-}"
+  if [[ "$NONINTERACTIVE" == "1" ]]; then
+    # In CI mode — value must already be set via env
+    local val="${!varname:-$default}"
+    printf -v "$varname" '%s' "$val"
+  else
+    ask "$prompt${default:+ [default: $default]}:"
+    if [[ "$secret" == "secret" ]]; then
+      read -rsp "  > " "$varname"; echo ""
+    else
+      read -rp "  > " "$varname"
+    fi
+    # Apply default if empty
+    if [[ -z "${!varname}" && -n "$default" ]]; then
+      printf -v "$varname" '%s' "$default"
+    fi
+  fi
+}
+
 # ── LLM Provider ─────────────────────────────────────────────
-echo ""
-echo -e "${W}LLM Provider:${N}"
-echo "  1) Groq        (free tier, fastest -- recommended)"
-echo "  2) OpenRouter  (multi-provider pool, free models)"
-echo "  3) Anthropic   (Claude)"
-echo "  4) OpenAI"
-echo ""
-ask "Choose provider [1-4]:"
-read -rp "  > " PROVIDER_CHOICE
+if [[ "$NONINTERACTIVE" == "1" ]]; then
+  PROVIDER_NAME="${OF_PROVIDER:-groq}"
+  case "$PROVIDER_NAME" in
+    groq)       PROVIDER_CHOICE=1 ;;
+    openrouter) PROVIDER_CHOICE=2 ;;
+    anthropic)  PROVIDER_CHOICE=3 ;;
+    openai)     PROVIDER_CHOICE=4 ;;
+    *) error "OF_PROVIDER must be: groq | openrouter | anthropic | openai" ;;
+  esac
+else
+  echo ""
+  echo -e "${W}LLM Provider:${N}"
+  echo "  1) Groq        (free tier, fastest -- recommended)"
+  echo "  2) OpenRouter  (multi-provider pool, free models)"
+  echo "  3) Anthropic   (Claude)"
+  echo "  4) OpenAI"
+  echo ""
+  ask "Choose provider [1-4]:"
+  read -rp "  > " PROVIDER_CHOICE
+fi
 
 case $PROVIDER_CHOICE in
   1) PNAME="groq";       PTYPE="openai_compatible"
@@ -108,64 +162,79 @@ case $PROVIDER_CHOICE in
   4) PNAME="openai";     PTYPE="openai_compatible"
      PURL="https://api.openai.com/v1"
      PENV="OPENAI_API_KEY"; PMODEL="gpt-4o-mini" ;;
-  *) error "Invalid choice" ;;
+  *) error "Invalid choice: $PROVIDER_CHOICE" ;;
 esac
 
-ask "$PNAME API key:"
-read -rsp "  > " API_KEY; echo ""
-require_nonempty "$API_KEY" "API key"
+# In non-interactive mode read all values from OF_* env vars
+if [[ "$NONINTERACTIVE" == "1" ]]; then
+  API_KEY="${OF_API_KEY:-}"
+  TG_TOKEN="${OF_TG_TOKEN:-}"
+  TG_USER_ID="${OF_TG_USER_ID:-}"
+  DASH_USER="${OF_DASH_USER:-admin}"
+  DASH_PASS="${OF_DASH_PASS:-}"
+  DASH_PORT="${OF_DASH_PORT:-4200}"
+  DOMAIN="${OF_DOMAIN:-}"
+  HOSTINGER_KEY="${OF_HOSTINGER_KEY:-}"
+  ROOT_DOMAIN="${OF_ROOT_DOMAIN:-}"
+  SSL_EMAIL="${OF_SSL_EMAIL:-}"
+  AGENT_NAME="${OF_AGENT_NAME:-assistant}"
+else
+  ask "$PNAME API key:"
+  read -rsp "  > " API_KEY; echo ""
 
-# ── Telegram ─────────────────────────────────────────────────
-echo ""
-ask "Telegram Bot Token (from @BotFather):"
-read -rsp "  > " TG_TOKEN; echo ""
-require_nonempty "$TG_TOKEN" "Telegram bot token"
+  echo ""
+  ask "Telegram Bot Token (from @BotFather):"
+  read -rsp "  > " TG_TOKEN; echo ""
 
-ask "Your Telegram numeric User ID (get from @userinfobot):"
-read -rp "  > " TG_USER_ID
-require_numeric "$TG_USER_ID" "Telegram User ID"
+  ask "Your Telegram numeric User ID (get from @userinfobot):"
+  read -rp "  > " TG_USER_ID
 
-# ── Dashboard ────────────────────────────────────────────────
-echo ""
-ask "Dashboard username [default: admin]:"
-read -rp "  > " DASH_USER; DASH_USER="${DASH_USER:-admin}"
+  echo ""
+  ask "Dashboard username [default: admin]:"
+  read -rp "  > " DASH_USER; DASH_USER="${DASH_USER:-admin}"
 
-ask "Dashboard password:"
-read -rsp "  > " DASH_PASS; echo ""
-require_nonempty "$DASH_PASS" "Dashboard password"
+  ask "Dashboard password:"
+  read -rsp "  > " DASH_PASS; echo ""
 
-ask "Dashboard internal port [default: 4200]:"
-read -rp "  > " DASH_PORT; DASH_PORT="${DASH_PORT:-4200}"
-require_numeric "$DASH_PORT" "Dashboard port"
+  ask "Dashboard internal port [default: 4200]:"
+  read -rp "  > " DASH_PORT; DASH_PORT="${DASH_PORT:-4200}"
 
-# ── Domain ───────────────────────────────────────────────────
-echo ""
-ask "Your subdomain for OpenFang (e.g. openfang.yourdomain.com):"
-read -rp "  > " DOMAIN
-require_domain "$DOMAIN" "Domain"
+  echo ""
+  ask "Your subdomain for OpenFang (e.g. openfang.yourdomain.com):"
+  read -rp "  > " DOMAIN
 
-ask "Your Hostinger API key (Portal > Account > API):"
-read -rsp "  > " HOSTINGER_KEY; echo ""
+  ask "Your Hostinger API key (Portal > Account > API):"
+  read -rsp "  > " HOSTINGER_KEY; echo ""
+
+  ask "Root domain registered in Hostinger (e.g. yourdomain.com):"
+  read -rp "  > " ROOT_DOMAIN
+
+  ask "SSL email for Let's Encrypt:"
+  read -rp "  > " SSL_EMAIL
+
+  echo ""
+  ask "Agent name [default: assistant]:"
+  read -rp "  > " AGENT_NAME; AGENT_NAME="${AGENT_NAME:-assistant}"
+fi
+
+# ── Validate all collected values ────────────────────────────
+require_nonempty "$API_KEY"       "API key"
+require_nonempty "$TG_TOKEN"      "Telegram bot token"
+require_numeric  "$TG_USER_ID"    "Telegram User ID"
+require_nonempty "$DASH_PASS"     "Dashboard password"
+require_numeric  "$DASH_PORT"     "Dashboard port"
+require_domain   "$DOMAIN"        "Domain"
 require_nonempty "$HOSTINGER_KEY" "Hostinger API key"
+require_domain   "$ROOT_DOMAIN"   "Root domain"
+require_email    "$SSL_EMAIL"     "SSL email"
 
-ask "Root domain registered in Hostinger (e.g. yourdomain.com):"
-read -rp "  > " ROOT_DOMAIN
-require_domain "$ROOT_DOMAIN" "Root domain"
-
-ask "SSL email for Let's Encrypt:"
-read -rp "  > " SSL_EMAIL
-require_email "$SSL_EMAIL" "SSL email"
-
-# ── Agent Name ───────────────────────────────────────────────
-echo ""
-ask "Agent name [default: assistant]:"
-read -rp "  > " AGENT_NAME; AGENT_NAME="${AGENT_NAME:-assistant}"
-
-# ── Confirm ──────────────────────────────────────────────────
+# ── Summary (always shown) ────────────────────────────────────
 echo ""
 divider
 echo -e "${W}  Summary${N}"
 divider
+echo "  Mode        : ${NONINTERACTIVE/1/non-interactive (CI)}"
+echo "  Mode        : ${NONINTERACTIVE/0/interactive}"
 echo "  Provider    : $PNAME > $PMODEL"
 echo "  Telegram    : user ID $TG_USER_ID"
 echo "  Dashboard   : port $DASH_PORT (user: $DASH_USER)"
@@ -175,9 +244,14 @@ echo "  SSL email   : $SSL_EMAIL"
 echo "  Agent name  : $AGENT_NAME"
 divider
 echo ""
-ask "Everything correct? Proceed with full install? [Y/n]:"
-read -rp "  > " GO; GO="${GO:-y}"
-[[ ! "$GO" =~ ^[Yy]$ ]] && { echo "Aborted."; exit 0; }
+
+if [[ "$NONINTERACTIVE" != "1" ]]; then
+  ask "Everything correct? Proceed with full install? [Y/n]:"
+  read -rp "  > " GO; GO="${GO:-y}"
+  [[ ! "$GO" =~ ^[Yy]$ ]] && { echo "Aborted."; exit 0; }
+else
+  log "Non-interactive mode: proceeding automatically"
+fi
 
 # Derive subdomain prefix for Hostinger API
 SUBDOMAIN_PREFIX="${DOMAIN%%.$ROOT_DOMAIN}"
