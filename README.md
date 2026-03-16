@@ -41,6 +41,14 @@ bash install.sh
 - **Anthropic** (Claude)
 - **OpenAI**
 
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `install.sh` | Full install: deps → DNS → binary → config → nginx → SSL |
+| `update.sh` | Update binary + restart service |
+| `uninstall.sh` | Clean removal with optional data/cert/user wipe |
+
 ## Requirements
 
 - Debian 11 or 12
