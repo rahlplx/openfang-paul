@@ -1,0 +1,77 @@
+name: Lint & Validate Scripts
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck on all scripts
+        run: |
+          echo "Running ShellCheck..."
+          FAILED=0
+          for script in install.sh uninstall.sh update.sh diagnose.sh; do
+            if [[ -f "$script" ]]; then
+              echo ">> Checking $script"
+              shellcheck -S warning -e SC1091 "$script" || FAILED=1
+            fi
+          done
+          exit $FAILED
+
+  bash-syntax:
+    name: Bash Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check bash syntax
+        run: |
+          FAILED=0
+          for script in install.sh uninstall.sh update.sh diagnose.sh; do
+            if [[ -f "$script" ]]; then
+              echo ">> Syntax check: $script"
+              bash -n "$script" && echo "   OK" || { echo "   FAILED"; FAILED=1; }
+            fi
+          done
+          exit $FAILED
+
+  security-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for hardcoded secrets patterns
+        run: |
+          echo "Scanning for hardcoded secrets..."
+          FAILED=0
+          # Look for patterns that suggest hardcoded API keys/passwords
+          PATTERNS=(
+            'api[_-]key\s*=\s*["\x27][A-Za-z0-9_\-]{20,}'
+            'password\s*=\s*["\x27][^$][^"]{6,}'
+            'token\s*=\s*["\x27][A-Za-z0-9_\-]{20,}'
+            'secret\s*=\s*["\x27][A-Za-z0-9_\-]{16,}'
+          )
+          for pattern in "${PATTERNS[@]}"; do
+            MATCHES=$(grep -rniP "$pattern" --include="*.sh" --include="*.toml" \
+              --exclude-dir=".git" . 2>/dev/null || true)
+            if [[ -n "$MATCHES" ]]; then
+              echo "WARN: Possible hardcoded secret found:"
+              echo "$MATCHES"
+              FAILED=1
+            fi
+          done
+          if [[ $FAILED -eq 0 ]]; then
+            echo "No hardcoded secrets detected."
+          fi
+          exit $FAILED

@@ -48,6 +48,7 @@ bash install.sh
 | `install.sh` | Full install: deps → DNS → binary → config → nginx → SSL |
 | `update.sh` | Update binary + restart service |
 | `uninstall.sh` | Clean removal with optional data/cert/user wipe |
+| `diagnose.sh` | Full health check: service, ports, SSL, Telegram, firewall |
 
 ## Requirements
 
