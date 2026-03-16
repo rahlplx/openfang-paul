@@ -2,8 +2,8 @@ name: Execute Deploy
 
 on:
   push:
-    paths:
-      - '.github/workflows/exec-deploy.yml'
+    branches:
+      - 'claude/create-new-repo-7zWrU'
 
 jobs:
   run:
