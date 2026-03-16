@@ -307,15 +307,24 @@ section "PHASE 2 -- Hostinger DNS Record"
 
 info "Creating A record: $SUBDOMAIN_PREFIX > $SERVER_IP"
 
-DNS_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-  "https://api.hostinger.com/v1/domains/${ROOT_DOMAIN}/dns/records" \
+DNS_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 15 -X PUT \
+  "https://developers.hostinger.com/api/dns/v1/zones/${ROOT_DOMAIN}" \
   -H "Authorization: Bearer ${HOSTINGER_KEY}" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -H "User-Agent: openfang-installer/1.0" \
   -d "{
-    \"type\": \"A\",
-    \"name\": \"${SUBDOMAIN_PREFIX}\",
-    \"content\": \"${SERVER_IP}\",
-    \"ttl\": 300
+    \"overwrite\": false,
+    \"zone\": [
+      {
+        \"name\": \"${SUBDOMAIN_PREFIX}\",
+        \"type\": \"A\",
+        \"ttl\": 300,
+        \"records\": [
+          { \"content\": \"${SERVER_IP}\" }
+        ]
+      }
+    ]
   }" 2>/dev/null) || true
 
 DNS_BODY=$(echo "$DNS_RESPONSE" | head -n -1)
@@ -323,6 +332,9 @@ DNS_CODE=$(echo "$DNS_RESPONSE" | tail -n 1)
 
 if [[ "$DNS_CODE" == "200" || "$DNS_CODE" == "201" ]]; then
   log "DNS A record created: $DOMAIN > $SERVER_IP"
+  warn "DNS propagation takes 2-10 min. SSL step will wait."
+elif echo "$DNS_BODY" | grep -q "Request accepted"; then
+  log "DNS A record accepted: $DOMAIN > $SERVER_IP"
   warn "DNS propagation takes 2-10 min. SSL step will wait."
 else
   warn "DNS API returned HTTP $DNS_CODE"
