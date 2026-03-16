@@ -1,0 +1,105 @@
+name: One-Shot Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      vps_host:
+        description: "VPS IP"
+        required: true
+      vps_pass:
+        description: "VPS root password"
+        required: true
+      api_key:
+        description: "Groq API key"
+        required: true
+      tg_token:
+        description: "Telegram bot token"
+        required: true
+      tg_uid:
+        description: "Telegram user ID"
+        required: true
+      dash_pass:
+        description: "Dashboard password"
+        required: true
+      hostinger_key:
+        description: "Hostinger API key"
+        required: true
+      ssl_email:
+        description: "SSL email"
+        required: true
+      domain:
+        description: "Full domain"
+        required: true
+        default: "agency.trendtoksocial.com"
+      root_domain:
+        description: "Root domain"
+        required: true
+        default: "trendtoksocial.com"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sshpass
+        run: sudo apt-get install -y sshpass
+
+      - name: Upload install script
+        env:
+          SSHPASS: ${{ github.event.inputs.vps_pass }}
+        run: |
+          sshpass -e scp -o StrictHostKeyChecking=no \
+            install.sh diagnose.sh \
+            root@${{ github.event.inputs.vps_host }}:/root/
+          sshpass -e ssh -o StrictHostKeyChecking=no \
+            root@${{ github.event.inputs.vps_host }} \
+            "chmod +x /root/install.sh /root/diagnose.sh"
+          echo "Scripts uploaded."
+
+      - name: Run installer
+        env:
+          SSHPASS: ${{ github.event.inputs.vps_pass }}
+          OF_API_KEY: ${{ github.event.inputs.api_key }}
+          OF_TG_TOKEN: ${{ github.event.inputs.tg_token }}
+          OF_DASH_PASS: ${{ github.event.inputs.dash_pass }}
+          OF_HOSTINGER_KEY: ${{ github.event.inputs.hostinger_key }}
+        run: |
+          sshpass -e ssh \
+            -o StrictHostKeyChecking=no \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=60 \
+            root@${{ github.event.inputs.vps_host }} \
+            OPENFANG_NONINTERACTIVE=1 \
+            OF_PROVIDER=groq \
+            OF_API_KEY="${OF_API_KEY}" \
+            OF_TG_TOKEN="${OF_TG_TOKEN}" \
+            OF_TG_USER_ID="${{ github.event.inputs.tg_uid }}" \
+            OF_DASH_USER=admin \
+            OF_DASH_PASS="${OF_DASH_PASS}" \
+            OF_DASH_PORT=4200 \
+            OF_DOMAIN="${{ github.event.inputs.domain }}" \
+            OF_HOSTINGER_KEY="${OF_HOSTINGER_KEY}" \
+            OF_ROOT_DOMAIN="${{ github.event.inputs.root_domain }}" \
+            OF_SSL_EMAIL="${{ github.event.inputs.ssl_email }}" \
+            OF_AGENT_NAME=assistant \
+            bash /root/install.sh 2>&1
+
+      - name: Diagnostics
+        if: always()
+        env:
+          SSHPASS: ${{ github.event.inputs.vps_pass }}
+        run: |
+          sshpass -e ssh -o StrictHostKeyChecking=no \
+            root@${{ github.event.inputs.vps_host }} \
+            "bash /root/diagnose.sh 2>&1" || true
+
+      - name: HTTPS check
+        if: always()
+        run: |
+          sleep 5
+          HTTP=$(curl -sk -o /dev/null -w "%{http_code}" \
+            --max-time 15 https://${{ github.event.inputs.domain }} || echo "000")
+          echo "HTTPS ${{ github.event.inputs.domain }}: HTTP $HTTP"
+          [[ "$HTTP" =~ ^(200|301|302|401|403)$ ]] && echo "SITE IS LIVE" || echo "SSL may still be provisioning"
